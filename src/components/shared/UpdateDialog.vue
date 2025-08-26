@@ -50,9 +50,6 @@ watch(data, (d) => {
     newVersion.value = json.name;
     if (lt(VERSION_NAME, remoteVersion)) {
         console.log("检测到新版本");
-        // TODO: 不要直接用字符串切割
-        const text = json.body.split("# 🚀 更新内容")[1].split("# ⬇️ 下载")[0];
-        updateContent.value = markdownIt.render(text);
         showUpdateDialog.value = true;
     } else {
         console.log("当前版本已是最新");
@@ -121,7 +118,6 @@ onUnmounted(() => {
         :close-on-overlay-click="false"
         @confirm="downloadAndIntallUpdate()"
     >
-        <div v-html="updateContent"></div>
     </RichDialog>
     <ProgressDialog :progress="downloadProgress" v-model="showProgressDialog" />
 </template>
