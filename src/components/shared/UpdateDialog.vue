@@ -11,6 +11,7 @@ import RichDialog from "./RichDialog.vue";
 import { useI18n } from "vue-i18n";
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
+import ProgressDialog from "./ProgressDialog.vue";
 
 const { t } = useI18n();
 const markdownIt = new MarkdownIt({
@@ -21,9 +22,12 @@ const markdownIt = new MarkdownIt({
 
 const autoUpdateStore = useAutoUpdateStore(); // autoUpdateStore.enable是一个常量，用于控制是否启用自动更新
 
-const dialogOpen = ref<boolean>(false);
+const showUpdateDialog = ref<boolean>(false);
+const showProgressDialog = ref<boolean>(false);
+const updateContent = ref<string>("");
 const currentVersion = VERSION_NAME;
 const newVersion = ref<string>("");
+const downloadProgress = ref<number | undefined>(undefined);
 
 const { isFetching, error, data, abort, execute } = useFetch(UPDATE_URL, {
     immediate: false,
@@ -46,7 +50,10 @@ watch(data, (d) => {
     newVersion.value = json.name;
     if (lt(VERSION_NAME, remoteVersion)) {
         console.log("检测到新版本");
-        dialogOpen.value = true;
+        // TODO: 不要直接用字符串切割
+        const text = json.body.split("# 🚀 更新内容")[1].split("# ⬇️ 下载")[0];
+        updateContent.value = markdownIt.render(text);
+        showUpdateDialog.value = true;
     } else {
         console.log("当前版本已是最新");
         snackbar({ message: "当前已是最新版本" });
@@ -62,40 +69,42 @@ watch(error, (err) => {
     }
 });
 
-const openUpdateURLInBrowser = async () => {
-    const update = await check();
-    if (update) {
-        alert("发现更新" + update.version);
-        console.log(`found update ${update.version} from ${update.date} with notes ${update.body}`);
-        let downloaded = 0;
-        let contentLength = 0;
-        // alternatively we could also call update.download() and update.install() separately
-        await update.downloadAndInstall((event) => {
-            switch (event.event) {
-                case "Started":
-                    alert("开始下载");
-                    if (event.data.contentLength) {
-                        contentLength = event.data.contentLength;
-                    }
-                    console.log(`started downloading ${event.data.contentLength} bytes`);
-                    break;
-                case "Progress":
-                    downloaded += event.data.chunkLength;
-                    snackbar({
-                        message: `正在下载更新：${((downloaded / contentLength) * 100).toFixed(2)}%`,
-                    });
-                    console.log(`downloaded ${downloaded} from ${contentLength}`);
-                    break;
-                case "Finished":
-                    alert("下载成功，开始安装");
-                    console.log("download finished");
-                    break;
-            }
-        });
+const downloadAndIntallUpdate = async () => {
+    try {
+        const update = await check();
+        if (update) {
+            console.log(
+                `found update ${update.version} from ${update.date} with notes ${update.body}`,
+            );
+            let downloaded = 0;
+            let contentLength = 0;
+            // alternatively we could also call update.download() and update.install() separately
+            await update.downloadAndInstall((event) => {
+                switch (event.event) {
+                    case "Started":
+                        showProgressDialog.value = true;
+                        if (event.data.contentLength) {
+                            contentLength = event.data.contentLength;
+                        }
+                        console.log(`started downloading ${event.data.contentLength} bytes`);
+                        break;
+                    case "Progress":
+                        downloaded += event.data.chunkLength;
+                        downloadProgress.value = contentLength > 0 ? downloaded / contentLength : 0;
+                        console.log(`downloaded ${downloaded} from ${contentLength}`);
+                        break;
+                    case "Finished":
+                        downloadProgress.value = undefined;
+                        break;
+                }
+            });
 
-                    alert("安装成功，即将重启");
-        console.log("update installed");
-        await relaunch();
+            console.log("update installed");
+            await relaunch();
+        }
+    } catch (error) {
+        console.error("更新失败:", error);
+        snackbar({ message: `更新失败: ${error}` });
     }
 };
 
@@ -105,8 +114,14 @@ onUnmounted(() => {
 </script>
 
 <template>
-    <RichDialog :headline="t('update-dialog.headline', { version: newVersion })"
-        :description="t('update-dialog.description', { version: currentVersion })" v-model="dialogOpen"
-        :close-on-overlay-click="false" @confirm="openUpdateURLInBrowser()">
+    <RichDialog
+        :headline="t('update-dialog.headline', { version: newVersion })"
+        :description="t('update-dialog.description', { version: currentVersion })"
+        v-model="showUpdateDialog"
+        :close-on-overlay-click="false"
+        @confirm="downloadAndIntallUpdate()"
+    >
+        <div v-html="updateContent"></div>
     </RichDialog>
+    <ProgressDialog :progress="downloadProgress" v-model="showProgressDialog" />
 </template>
