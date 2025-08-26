@@ -17,6 +17,6 @@ const { t } = useI18n();
         close-on-esc="false"
         ref="dialog"
     >
-        <mdui-linear-progress :value="progress" min="0" max="100"></mdui-linear-progress>
+        <mdui-linear-progress :value="progress" min="0" max="1"></mdui-linear-progress>
     </mdui-dialog>
 </template>
