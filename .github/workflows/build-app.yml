@@ -14,7 +14,41 @@ env:
 
 jobs:
   build:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Windows x64
+          - platform: windows-latest
+            name: 'Windows x64'
+            args: ''
+
+          # Windows x32
+          - platform: windows-latest
+            name: 'Windows x32'
+            args: '--target i686-pc-windows-msvc'
+
+          # Windows arm64
+          # - platform: windows-latest
+            # name: 'Windows arm64'
+            # args: '--target aarch64-pc-windows-msvc'
+
+          # 通用版
+          - platform: macos-latest
+            name: 'macOS Universal'
+            args: '--target universal-apple-darwin'
+
+          # Apple 芯片版（Arm 架构）
+          - platform: macos-latest
+            name: 'macOS arm64'
+            args: '--target aarch64-apple-darwin'
+
+          # Intel 芯片版
+          - platform: macos-latest
+            name: 'macOS x64'
+            args: '--target x86_64-apple-darwin'
+
+    runs-on: ${{ matrix.platform }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4.2.2
@@ -28,11 +62,18 @@ jobs:
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
+        with:
+          # 这个 target 仅在 macOS 上使用，因此将其放在 if 语句中，以稍微加快 Windows 和 Linux 的构建速度
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2.8.0
         with:
           workspaces: ./src-tauri -> target
+
+      - name: Remove package-lock.json # macOS 删除 package-lock.json 文件，避免跨平台依赖安装冲突
+        if: runner.os == 'macos'
+        run: rm -f package-lock.json
 
       - name: Install dependencies
         run: npm install
@@ -40,6 +81,7 @@ jobs:
       - name: Build app
         uses: tauri-apps/tauri-action@v0.5.23
         with:
+          args: ${{ matrix.args }}
           tagName: __VERSION__
           releaseName: '__VERSION__'
           releaseBody: 'See the assets to download this version and install.'
@@ -50,7 +92,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4.6.2
         with:
-          name: Artifact
+          name: ${{ matrix.name }}
           path: |
             src-tauri/target/**/release/bundle/**/*
             src-tauri/target/**/release/Super Hash.exe
